@@ -181,7 +181,16 @@ public:
 					   uint32_t maxBatchSize=DEFAULT_MAX_BATCH_SIZE, 
 					   precisionType precision=TYPE_FASTEST, 
 					   deviceType device=DEVICE_GPU, bool allowGPUFallback=true );
-	
+
+	/**
+	 * Add BACKGROUND_MATTING_V2 ONNX models
+	 * @param model_path File path to the caffemodel
+	 * @param maxBatchSize The maximum batch size that the network will support and be optimized for.
+	 */
+	static segNet* Create( const char* model_path, 
+					   uint32_t maxBatchSize=DEFAULT_MAX_BATCH_SIZE, 
+					   precisionType precision=TYPE_FASTEST, 
+					   deviceType device=DEVICE_GPU, bool allowGPUFallback=true );
 
 	/**
 	 * Load a new network instance by parsing the command line.
