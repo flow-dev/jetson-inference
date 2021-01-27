@@ -159,6 +159,9 @@ segNet::NetworkType segNet::NetworkTypeFromStr( const char* modelName )
 		type = segNet::FCN_RESNET18_SUNRGB_512x400;
 	else if( strcasecmp(modelName, "fcn-resnet18-sun-640x512") == 0 || strcasecmp(modelName, "fcn-resnet18-sun-rgbd-640x512") == 0 )
 		type = segNet::FCN_RESNET18_SUNRGB_640x512;
+	// Add BACKGROUND_MATTING_V2 ONNX models
+	else if( strcasecmp(modelName, "backgroundmatting-v2") == 0 )
+		type = segNet::BACKGROUND_MATTING_V2;
 
 	// legacy models
 	else if( strcasecmp(modelName, "fcn-alexnet-cityscapes-sd") == 0 || strcasecmp(modelName, "fcn-alexnet-cityscapes") == 0 )
@@ -199,6 +202,8 @@ const char* segNet::NetworkTypeToStr( segNet::NetworkType type )
 		case FCN_RESNET18_VOC_512x320:		return "fcn-resnet18-voc-512x320";
 		case FCN_RESNET18_SUNRGB_512x400:		return "fcn-resnet18-sun-512x400";
 		case FCN_RESNET18_SUNRGB_640x512:		return "fcn-resnet18-sun-640x512";
+		// Add BACKGROUND_MATTING_V2 ONNX models
+		case BACKGROUND_MATTING_V2:		return "backgroundmatting-v2";
 
 		// legacy models
 		case FCN_ALEXNET_PASCAL_VOC:			return "fcn-alexnet-pascal-voc";
@@ -220,6 +225,11 @@ segNet* segNet::Create( NetworkType networkType, uint32_t maxBatchSize,
 	segNet* net = NULL;
 
 	#define LOAD_ONNX(x) Create(NULL, "networks/" x "/fcn_resnet18.onnx", "networks/" x "/classes.txt", "networks/" x "/colors.txt", "input_0", "output_0", maxBatchSize, precision, device, allowGPUFallback )
+
+	// inputs{"src", "bgr"}
+	// outputs{ "pha_sm", "err_sm", "ref_sm", "pha", "fgr", "fgr_sm"}
+	// FIXME:複数の入出力を定義したい.tensorNet.hのLoadNetworkに複数の入出力の定義があるのでそこに渡せばよい?
+	#define LOAD_BGMV2_ONNX(x) Create(NULL, "networks/" x "/backgroundmatting-v2.onnx", NULL, NULL, "src", "pha_sm", maxBatchSize, precision, device, allowGPUFallback )
 
 	// ONNX models
 	if( networkType == FCN_RESNET18_CITYSCAPES_512x256 )
@@ -244,6 +254,9 @@ segNet* segNet::Create( NetworkType networkType, uint32_t maxBatchSize,
 		net = LOAD_ONNX("FCN-ResNet18-SUN-RGBD-512x400");
 	else if( networkType == FCN_RESNET18_SUNRGB_640x512 )
 		net = LOAD_ONNX("FCN-ResNet18-SUN-RGBD-640x512");
+	// Add BACKGROUND_MATTING_V2 ONNX models
+	else if( networkType == BACKGROUND_MATTING_V2 )
+		net = LOAD_BGMV2_ONNX("BACKGROUND_MATTING_V2");
 
 	// legacy models
 	else if( networkType == FCN_ALEXNET_PASCAL_VOC )

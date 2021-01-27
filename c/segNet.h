@@ -109,6 +109,7 @@ public:
 		FCN_ALEXNET_AERIAL_FPV_720p, 	     /**< FCN-Alexnet trained on aerial first-person view of the horizon line for drones, 1280x720 and 21 output classes */
 		
 		/* add new models here */
+		BACKGROUND_MATTING_V2,	// Add BACKGROUND_MATTING_V2 ONNX models
 		SEGNET_CUSTOM
 	};
 
