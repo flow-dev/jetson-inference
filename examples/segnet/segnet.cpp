@@ -234,14 +234,24 @@ int main( int argc, char** argv )
 			LogError("segnet:  failed to allocate buffers\n");
 			continue;
 		}
-
+/*
 		// process the segmentation network
 		if( !net->Process(imgInput, input->GetWidth(), input->GetHeight(), ignoreClass) )
 		{
 			LogError("segnet:  failed to process segmentation\n");
 			continue;
 		}
-		
+*/
+		// process the segmentation network
+		if( !net->Process(imgInput, imgInput, input->GetWidth(), input->GetHeight()) )
+		{
+			LogError("segnet:  failed to process segmentation\n");
+			continue;
+		}
+
+		printf(LOG_TRT "segnet---------------BACKGROUND_MATTING_V2 -- (%2d,%2d) InputSize \n", input->GetWidth(), input->GetHeight());
+
+
 		// generate overlay
 		if( visualizationFlags & segNet::VISUALIZE_OVERLAY )
 		{

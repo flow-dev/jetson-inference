@@ -795,16 +795,12 @@ bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat 
 
 	if( IsModelType(MODEL_ONNX) )
 	{
-		printf(LOG_TRT "BACKGROUND_MATTING_V2 -- (%2d,%2d) OutputSize \n", GetInputWidth(), GetInputHeight());
-
 		// downsample, convert to band-sequential RGB, and apply pixel normalization, mean pixel subtraction and standard deviation
 		if( CUDA_FAILED(cudaTensorNormMeanRGB(image, format, width, height,
 									   mInputs[0].CUDA, GetInputWidth(), GetInputHeight(),
 									   make_float2(0.0f, 1.0f), 
-									   //make_float3(0.485f, 0.456f, 0.406f),
-									   //make_float3(0.229f, 0.224f, 0.225f), 
-									   make_float3(0.5f, 0.5f, 0.5f),
-									   make_float3(0.5f, 0.5f, 0.5f), 
+									   make_float3(0.485f, 0.456f, 0.406f),
+									   make_float3(0.229f, 0.224f, 0.225f), 
 									   GetStream())) )
 		{
 			LogError(LOG_TRT "segNet::Process() -- cudaTensorNormMeanRGB() failed\n");
@@ -833,18 +829,11 @@ bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat 
 	PROFILER_END(PROFILER_NETWORK);
 	PROFILER_BEGIN(PROFILER_POSTPROCESS);
 
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- Process Start08 \n");
-
 	// generate argmax classification map
 	if( !classify(ignore_class) )
 		return false;
 
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- Process Start09 \n");
-
-
 	PROFILER_END(PROFILER_POSTPROCESS);
-
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- Process Start10 \n");
 
 	// cache pointer to last image processed
 	mLastInputImg    = image;
@@ -852,7 +841,89 @@ bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat 
 	mLastInputHeight = height;
 	mLastInputFormat = format;
 
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- Process Start11 \n");
+	return true;
+}
+
+
+// Add BACKGROUND_MATTING_V2 Process
+bool segNet::Process( float* rgb_src, float* rgb_bgr, uint32_t width, uint32_t height)
+{
+	return Process(rgb_src, rgb_bgr, width, height, IMAGE_RGB32F);
+}
+
+// // Add BACKGROUND_MATTING_V2 Process
+bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t height, imageFormat format)
+{
+
+	if( !image_src || !image_bgr || width == 0 || height == 0 )
+	{
+		LogError(LOG_TRT "BACKGROUND_MATTING_V2::Process( 0x%p, 0x%p, %u, %u ) -> invalid parameters\n", image_src, image_bgr, width, height);
+		return false;
+	}
+
+	if( !imageFormatIsRGB(format) )
+	{
+		LogError(LOG_TRT "segNet -- unsupported image format (%s)\n", imageFormatToStr(format));
+		LogError(LOG_TRT "          supported formats are:\n");
+		LogError(LOG_TRT "              * rgb8\n");		
+		LogError(LOG_TRT "              * rgba8\n");		
+		LogError(LOG_TRT "              * rgb32f\n");		
+		LogError(LOG_TRT "              * rgba32f\n");
+
+		return cudaErrorInvalidValue;
+	}
+
+	PROFILER_BEGIN(PROFILER_PREPROCESS);
+
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- (%2d,%2d) OutputSize \n", GetInputWidth(), GetInputHeight());
+
+	// remap from [0,255] -> [0,1], no mean pixel subtraction or std dev applied
+	const float2 range  = make_float2(0.0f, 1.0f);
+	const float3 mean   = make_float3(0.0f, 0.0f, 0.0f);
+	const float3 stdDev = make_float3(1.0f, 1.0f, 1.0f);
+
+	// convert to band-sequential RGB, and apply pixel normalization, mean pixel subtraction and standard deviation
+	if( CUDA_FAILED(cudaTensorNormMeanRGB(image_src, format, width, height,
+								   mInputs[0].CUDA, GetInputWidth(), GetInputHeight(),
+								   range, mean, stdDev, GetStream())) )
+	{
+		LogError(LOG_TRT "BACKGROUND_MATTING_V2::Process() -- cudaTensorNormMeanRGB() failed\n");
+		return false;
+	}
+
+	// convert to band-sequential RGB, and apply pixel normalization, mean pixel subtraction and standard deviation
+	if( CUDA_FAILED(cudaTensorNormMeanRGB(image_bgr, format, width, height,
+								   mInputs[1].CUDA, GetInputWidth(), GetInputHeight(),
+								   range, mean, stdDev, GetStream())) )
+	{
+		LogError(LOG_TRT "BACKGROUND_MATTING_V2::Process() -- cudaTensorNormMeanRGB() failed\n");
+		return false;
+	}
+
+	PROFILER_END(PROFILER_PREPROCESS);
+	PROFILER_BEGIN(PROFILER_NETWORK);
+
+	// process with TensorRT
+	if( !ProcessNetwork() )
+		return false;
+
+	PROFILER_END(PROFILER_NETWORK);
+	PROFILER_BEGIN(PROFILER_POSTPROCESS);
+
+	PROFILER_END(PROFILER_POSTPROCESS);
+
+	// cache pointer to last image processed
+	mLastInputImg    = image_src;
+	mLastInputWidth  = width;
+	mLastInputHeight = height;
+	mLastInputFormat = format;
+
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[0].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[1].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[2].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[3].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[4].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[5].name.c_str());
 
 	return true;
 }

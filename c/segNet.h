@@ -62,6 +62,7 @@
 		  "                           * fcn-resnet18-voc-512x320\n"					\
 		  "                           * fcn-resnet18-sun-512x400\n"					\
 		  "                           * fcn-resnet18-sun-640x512\n"                  	\
+		  "                           * backgroundmatting-v2\n"                  	\
 		  "  --model=MODEL        path to custom model to load (caffemodel, uff, or onnx)\n" 			\
 		  "  --prototxt=PROTOTXT  path to custom prototxt to load (for .caffemodel only)\n" 				\
 		  "  --labels=LABELS      path to text file containing the labels for each class\n" 				\
@@ -242,6 +243,39 @@ public:
 	 * @param ignore_class label name of class to ignore in the classification (or NULL to process all).
 	 */
 	bool Process( float* input, uint32_t width, uint32_t height, const char* ignore_class="void" );
+
+
+	// // Add BACKGROUND_MATTING_V2 Process
+	/**
+ 	 * Perform the initial inferencing processing portion of the segmentation.
+	 * The results can then be visualized using the Overlay() and Mask() functions.      
+	 * @param input_src the input image in CUDA device memory, with pixel values 0-255.
+	 * @param input_bgr the input image in CUDA device memory, with pixel values 0-255.
+	 * @param width width of the input image in pixels.
+	 * @param height height of the input image in pixels.
+	 */
+	template<typename T> bool Process( T* input_src, T* input_bgr, uint32_t width, uint32_t height)		{ return Process((void*)input_src, (void*)input_bgr, width, height, imageFormatFromType<T>()); }
+
+	/**
+ 	 * Perform the initial inferencing processing portion of the segmentation.
+	 * The results can then be visualized using the Overlay() and Mask() functions.      
+	 * @param input_src the input image in CUDA device memory, with pixel values 0-255.
+	 * @param input_bgr the input image in CUDA device memory, with pixel values 0-255.
+	 * @param width width of the input image in pixels.
+	 * @param height height of the input image in pixels.
+	 * @param format format of the input image in pixels.
+	 */
+	bool Process( void* input_src, void* input_bgr, uint32_t width, uint32_t height, imageFormat format);
+
+	/**
+ 	 * Perform the initial inferencing processing portion of the segmentation.
+	 * The results can then be visualized using the Overlay() and Mask() functions.      
+	 * @param input_src the input image in CUDA device memory, with pixel values 0-255.
+	 * @param input_bgr the input image in CUDA device memory, with pixel values 0-255.
+	 * @param width width of the input image in pixels.
+	 * @param height height of the input image in pixels.
+	 */
+	bool Process( float* input_src, float* input_bgr, uint32_t width, uint32_t height);
 
 	/**
 	 * Produce a colorized segmentation mask.
