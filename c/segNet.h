@@ -376,6 +376,7 @@ protected:
 	bool*    mColorsAlphaSet;	/**< true if class color had been explicitly set from file or user */
 	float*   mClassColors;		/**< array of overlay colors in shared CPU/GPU memory */
 	uint8_t* mClassMap;			/**< runtime buffer for the argmax-classified class index of each tile */
+	float*   mPhaMap;			/**< pha */
 	
 	void*  	  mLastInputImg;	/**< last input image to be processed, stored for overlay */
 	uint32_t 	  mLastInputWidth;	/**< width in pixels of last input image to be processed */

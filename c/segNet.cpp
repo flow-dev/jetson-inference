@@ -44,6 +44,7 @@ segNet::segNet() : tensorNet()
 	mColorsAlphaSet = NULL;
 	mClassColors    = NULL;
 	mClassMap       = NULL;
+	mPhaMap         = NULL;
 
 	mNetworkType = SEGNET_CUSTOM;
 }
@@ -54,6 +55,7 @@ segNet::~segNet()
 {
 	CUDA_FREE_HOST(mClassColors);
 	CUDA_FREE_HOST(mClassMap);
+	CUDA_FREE_HOST(mPhaMap);
 	
 	if( mColorsAlphaSet != NULL )
 	{
@@ -438,11 +440,8 @@ segNet* segNet::Create(const char* model, uint32_t maxBatchSize, precisionType p
 	LogInfo("       -- model:      %s\n", model);
 	LogInfo("       -- batch_size  %u\n\n", maxBatchSize);
 	
-	//net->EnableProfiler();	
 	//net->EnableDebug();
 	//net->DisableFP16();		// debug;
-
-	// load network
 
 	// set BACKGROUND_MATTING_V2 inputs
 	std::vector<std::string> input_blobs;
@@ -458,13 +457,51 @@ segNet* segNet::Create(const char* model, uint32_t maxBatchSize, precisionType p
 	output_blobs.push_back("fgr");
 	output_blobs.push_back("fgr_sm");
 
+	// load network
 	if( !net->LoadNetwork(NULL, model, NULL, input_blobs, output_blobs, maxBatchSize,
 					  precision, device, allowGPUFallback) )
 	{
-		LogError(LOG_TRT "segNet -- failed to load.\n");
+		LogError(LOG_TRT "BACKGROUND_MATTING_V2 -- failed to load.\n");
 		return NULL;
 	}
+
+	// Dummy because it is not necessary for processing.
+	const uint32_t numClasses = net->GetNumClasses();
 	
+	if( !cudaAllocMapped((void**)&net->mClassColors, numClasses * sizeof(float4)) )
+		return NULL;
+	
+	for( uint32_t n=0; n < numClasses; n++ )
+	{
+		net->mClassColors[n*4+0] = 255.0f;	// r
+		net->mClassColors[n*4+1] = 0.0f;	// g
+		net->mClassColors[n*4+2] = 0.0f;	// b
+		net->mClassColors[n*4+3] = 255.0f;	// a
+	}
+
+	// Dummy because it is not necessary for processing.
+	net->mColorsAlphaSet = (bool*)malloc(numClasses * sizeof(bool));
+
+	if( !net->mColorsAlphaSet )
+	{
+		printf(LOG_TRT "BACKGROUND_MATTING_V2 -- failed to Dummy because it is not necessary for processing\n");
+		return NULL;
+	}
+
+	memset(net->mColorsAlphaSet, 0, numClasses * sizeof(bool));
+
+	// initialize array of "pha"
+	const int s_w = DIMS_W(net->mOutputs[3].dims);
+	const int s_h = DIMS_H(net->mOutputs[3].dims);
+	const int s_c = DIMS_C(net->mOutputs[3].dims);
+		
+	LogVerbose(LOG_TRT "BACKGROUND_MATTING_V2 outputs of pha -- s_w %i  s_h %i  s_c %i\n", s_w, s_h, s_c);
+
+	if( !cudaAllocMapped((void**)&net->mPhaMap, s_w * s_h * sizeof(float)) )
+		return NULL;
+
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- LoadNetwork Done \n");
+
 	return net;
 }
 
@@ -735,6 +772,7 @@ bool segNet::Process( float* rgba, uint32_t width, uint32_t height, const char* 
 // Process
 bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat format, const char* ignore_class )
 {
+
 	if( !image || width == 0 || height == 0 )
 	{
 		LogError(LOG_TRT "segNet::Process( 0x%p, %u, %u ) -> invalid parameters\n", image, width, height);
@@ -757,12 +795,16 @@ bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat 
 
 	if( IsModelType(MODEL_ONNX) )
 	{
+		printf(LOG_TRT "BACKGROUND_MATTING_V2 -- (%2d,%2d) OutputSize \n", GetInputWidth(), GetInputHeight());
+
 		// downsample, convert to band-sequential RGB, and apply pixel normalization, mean pixel subtraction and standard deviation
 		if( CUDA_FAILED(cudaTensorNormMeanRGB(image, format, width, height,
 									   mInputs[0].CUDA, GetInputWidth(), GetInputHeight(),
 									   make_float2(0.0f, 1.0f), 
-									   make_float3(0.485f, 0.456f, 0.406f),
-									   make_float3(0.229f, 0.224f, 0.225f), 
+									   //make_float3(0.485f, 0.456f, 0.406f),
+									   //make_float3(0.229f, 0.224f, 0.225f), 
+									   make_float3(0.5f, 0.5f, 0.5f),
+									   make_float3(0.5f, 0.5f, 0.5f), 
 									   GetStream())) )
 		{
 			LogError(LOG_TRT "segNet::Process() -- cudaTensorNormMeanRGB() failed\n");
@@ -783,7 +825,7 @@ bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat 
 
 	PROFILER_END(PROFILER_PREPROCESS);
 	PROFILER_BEGIN(PROFILER_NETWORK);
-	
+
 	// process with TensorRT
 	if( !ProcessNetwork() )
 		return false;
@@ -791,17 +833,26 @@ bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat 
 	PROFILER_END(PROFILER_NETWORK);
 	PROFILER_BEGIN(PROFILER_POSTPROCESS);
 
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- Process Start08 \n");
+
 	// generate argmax classification map
 	if( !classify(ignore_class) )
 		return false;
 
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- Process Start09 \n");
+
+
 	PROFILER_END(PROFILER_POSTPROCESS);
+
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- Process Start10 \n");
 
 	// cache pointer to last image processed
 	mLastInputImg    = image;
 	mLastInputWidth  = width;
 	mLastInputHeight = height;
 	mLastInputFormat = format;
+
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- Process Start11 \n");
 
 	return true;
 }
