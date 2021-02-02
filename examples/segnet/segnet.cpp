@@ -22,6 +22,7 @@
 
 #include "videoSource.h"
 #include "videoOutput.h"
+#include "loadImage.h"
 
 #include "cudaOverlay.h"
 #include "cudaMappedMemory.h"
@@ -75,6 +76,12 @@ int usage()
 //
 typedef uchar3 pixelType;		// this can be uchar3, uchar4, float3, float4
 
+pixelType* imgBgrInput  = NULL;	// BACKGROUND_MATTING_V2:bgr
+pixelType* imgSegOutput = NULL;	// BACKGROUND_MATTING_V2:seg
+
+int2 bgrinputSize;	// BACKGROUND_MATTING_V2:bgr
+int2 segoutputSize;	// BACKGROUND_MATTING_V2:seg
+
 pixelType* imgMask      = NULL;	// color of each segmentation class
 pixelType* imgOverlay   = NULL;	// input + alpha-blended mask
 pixelType* imgComposite = NULL;	// overlay with mask next to it
@@ -84,6 +91,35 @@ int2 maskSize;
 int2 overlaySize;
 int2 compositeSize;
 int2 outputSize;
+
+
+// allocate BACKGROUND_MATTING_V2 buffers
+bool allocBackGroundMattingV2Buffers( int width, int height)
+{
+	// free previous buffers if they exit
+	CUDA_FREE_HOST(imgBgrInput);
+	CUDA_FREE_HOST(imgSegOutput);
+
+	// allocate input bgr image
+	bgrinputSize = make_int2(width, height);
+
+	if( !cudaAllocMapped(&imgBgrInput, bgrinputSize) )
+	{
+		LogError("BACKGROUND_MATTING_V2:  failed to allocate CUDA memory for input bgr image (%ux%u)\n", width, height);
+		return false;
+	}
+
+	// allocate input bgr image
+	segoutputSize = make_int2(width, height);
+
+	if( !cudaAllocMapped(&imgSegOutput, segoutputSize) )
+	{
+		LogError("BACKGROUND_MATTING_V2:  failed to allocate CUDA memory for output seg image (%ux%u)\n", width, height);
+		return false;
+	}
+
+	return true;
+}
 
 // allocate mask/overlay output buffers
 bool allocBuffers( int width, int height, uint32_t flags )
@@ -228,27 +264,50 @@ int main( int argc, char** argv )
 			continue;
 		}
 
+		// allocate bgr input buffers for this size frame
+		if( !allocBackGroundMattingV2Buffers(input->GetWidth(), input->GetHeight()) )
+		{
+			LogError("BackGroundMattingV2:  failed to allocate buffers\n");
+			continue;
+		}
+
 		// allocate buffers for this size frame
 		if( !allocBuffers(input->GetWidth(), input->GetHeight(), visualizationFlags) )
 		{
 			LogError("segnet:  failed to allocate buffers\n");
 			continue;
 		}
-/*
+
+		if( !loadImage("test_img_bg.png", (void**)&imgBgrInput, &bgrinputSize.x, &bgrinputSize.y, IMAGE_RGB8) )
+		{
+			printf("segnet:  failed to load image '%s'\n", "test_img_bg.png");
+			return 0;
+		}
+
+		printf("imgInput:%d \n",  imgInput[100].x);
+		printf("imgBgrInput:%d \n",  imgBgrInput[100].x);
+		printf("imgInput:%d \n",  imgInput->x);
+		printf("imgBgrInput:%d \n",  imgBgrInput->x);
+		//imgBgrInput = imgInput;
+		printf("imgInput:%d \n",  imgInput[100].x);
+		printf("imgBgrInput:%d \n",  imgBgrInput[100].x);
+		printf("imgInput:%d \n",  imgInput->x);
+		printf("imgBgrInput:%d \n",  imgBgrInput->x);
+
 		// process the segmentation network
 		if( !net->Process(imgInput, input->GetWidth(), input->GetHeight(), ignoreClass) )
 		{
 			LogError("segnet:  failed to process segmentation\n");
 			continue;
 		}
-*/
+/*
 		// process the segmentation network
-		if( !net->Process(imgInput, imgInput, input->GetWidth(), input->GetHeight()) )
+		if( !net->Process(imgInput, imgBgrInput, input->GetWidth(), input->GetHeight()) )
 		{
-			LogError("segnet:  failed to process segmentation\n");
+			LogError("BACKGROUND_MATTING_V2:  failed to process segmentation\n");
 			continue;
 		}
-
+*/
 		printf(LOG_TRT "segnet---------------BACKGROUND_MATTING_V2 -- (%2d,%2d) InputSize \n", input->GetWidth(), input->GetHeight());
 
 
@@ -282,7 +341,9 @@ int main( int argc, char** argv )
 		// render outputs
 		if( output != NULL )
 		{
-			output->Render(imgOutput, outputSize.x, outputSize.y);
+			//output->Render(imgOutput, outputSize.x, outputSize.y);
+			output->Render(imgBgrInput, bgrinputSize.x, bgrinputSize.y);
+
 
 			// update the status bar
 			char str[256];
@@ -310,6 +371,8 @@ int main( int argc, char** argv )
 	SAFE_DELETE(input);
 	SAFE_DELETE(output);
 	SAFE_DELETE(net);
+
+	CUDA_FREE_HOST(imgBgrInput);
 
 	CUDA_FREE_HOST(imgMask);
 	CUDA_FREE_HOST(imgOverlay);

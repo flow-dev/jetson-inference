@@ -910,6 +910,22 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 	PROFILER_END(PROFILER_NETWORK);
 	PROFILER_BEGIN(PROFILER_POSTPROCESS);
 
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[0].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[1].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[2].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[3].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[4].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[5].name.c_str());
+
+	// retrieve scores
+	float* pha_sm = mOutputs[3].CPU;
+	const int s_w = DIMS_W(mOutputs[3].dims);
+	const int s_h = DIMS_H(mOutputs[3].dims);
+	const int s_c = DIMS_C(mOutputs[3].dims);
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%d,%d,%d) \n", s_w, s_h, s_c);
+
+	/*mPhaMap*/
+
 	PROFILER_END(PROFILER_POSTPROCESS);
 
 	// cache pointer to last image processed
@@ -917,13 +933,6 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 	mLastInputWidth  = width;
 	mLastInputHeight = height;
 	mLastInputFormat = format;
-
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[0].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[1].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[2].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[3].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[4].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[5].name.c_str());
 
 	return true;
 }
