@@ -300,6 +300,16 @@ public:
 	bool Mask( uint8_t* output, uint32_t width, uint32_t height );
 
 	/**
+	 * Produce a grayscale binary segmentation mask.
+	 */
+	bool BinaryMask( uchar3* output, uint32_t width, uint32_t height );
+
+	/**
+	 * Produce a BlendingImage with segmentation mask.
+	 */
+	bool BlendingImage( uchar3* output, uint32_t width, uint32_t height );
+
+	/**
 	 * Produce the segmentation overlay alpha blended on top of the original image.
 	 * @param output output image in CUDA device memory, RGB/RGBA colorspace with values 0-255.
 	 * @param width width of the input image in pixels.
@@ -410,7 +420,8 @@ protected:
 	bool*    mColorsAlphaSet;	/**< true if class color had been explicitly set from file or user */
 	float*   mClassColors;		/**< array of overlay colors in shared CPU/GPU memory */
 	uint8_t* mClassMap;			/**< runtime buffer for the argmax-classified class index of each tile */
-	float*   mPhaMap;			/**< pha */
+	uchar3* mPhaMap;			/**< BACKGROUND_MATTING_V2 outputs of pha */
+	uchar3* mFgrMap;			/**< BACKGROUND_MATTING_V2 outputs of fgr */
 	
 	void*  	  mLastInputImg;	/**< last input image to be processed, stored for overlay */
 	uint32_t 	  mLastInputWidth;	/**< width in pixels of last input image to be processed */

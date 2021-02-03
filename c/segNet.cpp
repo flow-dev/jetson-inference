@@ -27,6 +27,8 @@
 #include "cudaOverlay.h"
 #include "cudaResize.h"
 #include "cudaFont.h"
+#include "cudaGrayscale.h"
+#include "cudaRGB.h"
 
 #include "commandLine.h"
 #include "filesystem.h"
@@ -45,6 +47,7 @@ segNet::segNet() : tensorNet()
 	mClassColors    = NULL;
 	mClassMap       = NULL;
 	mPhaMap         = NULL;
+	mFgrMap         = NULL;
 
 	mNetworkType = SEGNET_CUSTOM;
 }
@@ -56,6 +59,7 @@ segNet::~segNet()
 	CUDA_FREE_HOST(mClassColors);
 	CUDA_FREE_HOST(mClassMap);
 	CUDA_FREE_HOST(mPhaMap);
+	CUDA_FREE_HOST(mFgrMap);
 	
 	if( mColorsAlphaSet != NULL )
 	{
@@ -426,7 +430,7 @@ segNet* segNet::Create( const char* prototxt, const char* model, const char* lab
 	return net;
 }
 
-// Add BACKGROUND_MATTING_V2 ONNX models
+// Load BACKGROUND_MATTING_V2 ONNX models
 segNet* segNet::Create(const char* model, uint32_t maxBatchSize, precisionType precision, deviceType device, bool allowGPUFallback )
 {
 	// create segmentation model
@@ -465,6 +469,33 @@ segNet* segNet::Create(const char* model, uint32_t maxBatchSize, precisionType p
 		return NULL;
 	}
 
+	// initialize array of "pha"
+	const int s_w_pha = DIMS_W(net->mOutputs[3].dims);
+	const int s_h_pha = DIMS_H(net->mOutputs[3].dims);
+	
+	LogVerbose(LOG_TRT "BACKGROUND_MATTING_V2 outputs of pha -- s_w_pha %i  s_h_pha %i \n", s_w_pha, s_h_pha);
+
+	if( !cudaAllocMapped((void**)&net->mPhaMap, s_w_pha * s_h_pha * sizeof(uchar3)))
+		return NULL;
+
+	// initialize array of "fgr"
+	const int s_w_fgr = DIMS_W(net->mOutputs[4].dims);
+	const int s_h_fgr = DIMS_H(net->mOutputs[4].dims);
+	
+	LogVerbose(LOG_TRT "BACKGROUND_MATTING_V2 outputs of pha -- s_w_pha %i  s_h_pha %i \n", s_w_pha, s_h_pha);
+
+	if( !cudaAllocMapped((void**)&net->mFgrMap, s_w_fgr * s_h_fgr * sizeof(uchar3)))
+		return NULL;
+
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output_name (%s) \n", net->mOutputs[0].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output_name (%s) \n", net->mOutputs[1].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output_name (%s) \n", net->mOutputs[2].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output_name (%s) \n", net->mOutputs[3].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output_name (%s) \n", net->mOutputs[4].name.c_str());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output_name (%s) \n", net->mOutputs[5].name.c_str());
+
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- LoadNetwork Done \n");
+
 	// Dummy because it is not necessary for processing.
 	const uint32_t numClasses = net->GetNumClasses();
 	
@@ -484,23 +515,10 @@ segNet* segNet::Create(const char* model, uint32_t maxBatchSize, precisionType p
 
 	if( !net->mColorsAlphaSet )
 	{
-		printf(LOG_TRT "BACKGROUND_MATTING_V2 -- failed to Dummy because it is not necessary for processing\n");
 		return NULL;
 	}
 
 	memset(net->mColorsAlphaSet, 0, numClasses * sizeof(bool));
-
-	// initialize array of "pha"
-	const int s_w = DIMS_W(net->mOutputs[3].dims);
-	const int s_h = DIMS_H(net->mOutputs[3].dims);
-	const int s_c = DIMS_C(net->mOutputs[3].dims);
-		
-	LogVerbose(LOG_TRT "BACKGROUND_MATTING_V2 outputs of pha -- s_w %i  s_h %i  s_c %i\n", s_w, s_h, s_c);
-
-	if( !cudaAllocMapped((void**)&net->mPhaMap, s_w * s_h * sizeof(float)) )
-		return NULL;
-
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- LoadNetwork Done \n");
 
 	return net;
 }
@@ -845,7 +863,7 @@ bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat 
 }
 
 
-// Add BACKGROUND_MATTING_V2 Process
+// BACKGROUND_MATTING_V2 Process
 bool segNet::Process( float* rgb_src, float* rgb_bgr, uint32_t width, uint32_t height)
 {
 	return Process(rgb_src, rgb_bgr, width, height, IMAGE_RGB32F);
@@ -875,7 +893,7 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 
 	PROFILER_BEGIN(PROFILER_PREPROCESS);
 
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- (%2d,%2d) OutputSize \n", GetInputWidth(), GetInputHeight());
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- (%2d,%2d) GetInputSize \n", GetInputWidth(), GetInputHeight());
 
 	// remap from [0,255] -> [0,1], no mean pixel subtraction or std dev applied
 	const float2 range  = make_float2(0.0f, 1.0f);
@@ -887,7 +905,7 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 								   mInputs[0].CUDA, GetInputWidth(), GetInputHeight(),
 								   range, mean, stdDev, GetStream())) )
 	{
-		LogError(LOG_TRT "BACKGROUND_MATTING_V2::Process() -- cudaTensorNormMeanRGB() failed\n");
+		LogError(LOG_TRT "BACKGROUND_MATTING_V2::Process() -- cudaTensorNormMeanRGB() src failed\n");
 		return false;
 	}
 
@@ -896,7 +914,7 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 								   mInputs[1].CUDA, GetInputWidth(), GetInputHeight(),
 								   range, mean, stdDev, GetStream())) )
 	{
-		LogError(LOG_TRT "BACKGROUND_MATTING_V2::Process() -- cudaTensorNormMeanRGB() failed\n");
+		LogError(LOG_TRT "BACKGROUND_MATTING_V2::Process() -- cudaTensorNormMeanRGB() bgr failed\n");
 		return false;
 	}
 
@@ -910,21 +928,56 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 	PROFILER_END(PROFILER_NETWORK);
 	PROFILER_BEGIN(PROFILER_POSTPROCESS);
 
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[0].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[1].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[2].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[3].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[4].name.c_str());
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%s) \n", mOutputs[5].name.c_str());
+	// output "pha"
+	const int s_w_pha = DIMS_W(mOutputs[3].dims);
+	const int s_h_pha = DIMS_H(mOutputs[3].dims);
+	const int s_c_pha = DIMS_C(mOutputs[3].dims);
 
-	// retrieve scores
-	float* pha_sm = mOutputs[3].CPU;
-	const int s_w = DIMS_W(mOutputs[3].dims);
-	const int s_h = DIMS_H(mOutputs[3].dims);
-	const int s_c = DIMS_C(mOutputs[3].dims);
-	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- (%d,%d,%d) \n", s_w, s_h, s_c);
+	if( CUDA_FAILED(cudaGray32ToRGB8((float*)mOutputs[3].CUDA, (uchar3*)mPhaMap, s_w_pha, s_h_pha, make_float2(0,1))))
+	{
+		LogError(LOG_TRT "BACKGROUND_MATTING_V2 -- failed to process %ux%u cudaGray32ToRGB8 with CUDA\n", s_w_pha, s_h_pha);
+		return false;
+	}
 
-	/*mPhaMap*/
+	// output "fgr"
+	const int s_w_fgr = DIMS_W(mOutputs[4].dims);
+	const int s_h_fgr = DIMS_H(mOutputs[4].dims);
+	const int s_c_fgr = DIMS_C(mOutputs[4].dims);
+
+	if( CUDA_FAILED(cudaGray32ToRGB8((float*)mOutputs[4].CUDA, (uchar3*)mFgrMap, s_w_fgr, s_h_fgr, make_float2(0,1))))
+	{
+		LogError(LOG_TRT "BACKGROUND_MATTING_V2 -- failed to process %ux%u cudaRGB32ToRGB8 with CUDA\n", s_w_fgr, s_h_fgr);
+		return false;
+	}
+
+	int count_valid   = 0;
+	int count_invalid = 0;
+/*
+	for( uint32_t n=0; n < (s_w_pha * s_h_pha); n++ )
+	{
+		if(mOutputs[3].CPU[n] > 0)
+		{
+			count_valid += 1;
+			printf(LOG_TRT "BACKGROUND_MATTING_V2 -- pixel (%d,%f,%d,%d,%d) \n", n, mOutputs[3].CPU[n], s_w_pha, s_h_pha, s_c_pha);
+		}else
+		{
+			count_invalid += 1;
+		}
+	}
+*/
+	for( uint32_t n=0; n < (s_w_fgr * s_h_fgr); n++ )
+	{
+		if(mOutputs[4].CPU[n] > 0)
+		{
+			count_valid += 1;
+			printf(LOG_TRT "BACKGROUND_MATTING_V2 -- pixel (%d,%f,%d,%d,%d) \n", n, mOutputs[4].CPU[n], s_w_fgr, s_h_fgr, s_c_fgr);
+		}else
+		{
+			count_invalid += 1;
+		}
+	}
+
+	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- pixel_count (%d,%d) \n", count_valid, count_invalid);
 
 	PROFILER_END(PROFILER_POSTPROCESS);
 
@@ -937,6 +990,57 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 	return true;
 }
 
+// BinaryMask (binary)
+bool segNet::BinaryMask( uchar3* output, uint32_t out_width, uint32_t out_height )
+{
+	if( !output || out_width == 0 || out_height == 0 )
+	{
+		LogError(LOG_TRT "BinaryMask( 0x%p, %u, %u ) -> invalid parameters\n", output, out_width, out_height); 
+		return false;
+	}	
+
+	PROFILER_BEGIN(PROFILER_VISUALIZE);
+
+	// retrieve BinaryMask
+	uchar3* PhaMap = mPhaMap;
+
+	const int s_w = DIMS_W(mOutputs[3].dims);
+	const int s_h = DIMS_H(mOutputs[3].dims);
+		
+	if( out_width == s_w && out_height == s_h )
+	{
+		memcpy(output, PhaMap, s_w * s_h * sizeof(uchar3));
+	}
+	PROFILER_END(PROFILER_VISUALIZE);
+
+	return true;
+}
+
+// BinaryMask (binary)
+bool segNet::BlendingImage( uchar3* output, uint32_t out_width, uint32_t out_height )
+{
+	if( !output || out_width == 0 || out_height == 0 )
+	{
+		LogError(LOG_TRT "BlendingImage( 0x%p, %u, %u ) -> invalid parameters\n", output, out_width, out_height); 
+		return false;
+	}	
+
+	PROFILER_BEGIN(PROFILER_VISUALIZE);
+
+	// retrieve BlendingImage
+	uchar3* FgrMap = mFgrMap;
+
+	const int s_w = DIMS_W(mOutputs[4].dims);
+	const int s_h = DIMS_H(mOutputs[4].dims);
+		
+	if( out_width == s_w && out_height == s_h )
+	{
+		memcpy(output, FgrMap, s_w * s_h * sizeof(uchar3));
+	}
+	PROFILER_END(PROFILER_VISUALIZE);
+	
+	return true;
+}
 
 // argmax classification
 bool segNet::classify( const char* ignore_class )
@@ -957,8 +1061,8 @@ bool segNet::classify( const char* ignore_class )
 	// if desired, find the ID of the class to ignore (typically void)
 	const int ignoreID = FindClassID(ignore_class);
 	
-	//printf(LOG_TRT "segNet::Process -- s_w %i  s_h %i  s_c %i  s_x %f  s_y %f\n", s_w, s_h, s_c, s_x, s_y);
-	//printf(LOG_TRT "segNet::Process -- ignoring class '%s' id=%i\n", ignore_class, ignoreID);
+	printf(LOG_TRT "segNet::Process -- s_w %i  s_h %i  s_c %i  s_x %f  s_y %f\n", s_w, s_h, s_c, s_x, s_y);
+	printf(LOG_TRT "segNet::Process -- ignoring class '%s' id=%i\n", ignore_class, ignoreID);
 
 
 	// find the argmax-classified class of each tile
@@ -994,7 +1098,6 @@ bool segNet::classify( const char* ignore_class )
 
 	return true;
 }
-
 
 // Mask (binary)
 bool segNet::Mask( uint8_t* output, uint32_t out_width, uint32_t out_height )
