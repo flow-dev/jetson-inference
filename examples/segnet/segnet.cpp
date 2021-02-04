@@ -100,18 +100,8 @@ int2 outputSize;
 bool allocBackGroundMattingV2Buffers( int width, int height)
 {
 	// free previous buffers if they exit
-	CUDA_FREE_HOST(imgBgrInput);
 	CUDA_FREE_HOST(imgMaskOutput);
 	CUDA_FREE_HOST(imgBlendOutput);
-
-	// allocate input bgr image
-	bgrinputSize = make_int2(width, height);
-
-	if( !cudaAllocMapped(&imgBgrInput, bgrinputSize) )
-	{
-		LogError("BACKGROUND_MATTING_V2:  failed to allocate CUDA memory for input bgr image (%ux%u)\n", width, height);
-		return false;
-	}
 
 	// allocate output BlendingImage image
 	maskoutputSize = make_int2(width, height);
@@ -245,6 +235,31 @@ int main( int argc, char** argv )
 		return 0;
 	}
 
+	// get the desired NetworkType type
+	const segNet::NetworkType networkType = segNet::NetworkTypeFromStr(cmdLine.GetString("network", "fcn-resnet18-voc-320x320"));
+
+	if( networkType == segNet::BACKGROUND_MATTING_V2 )
+	{
+		printf(LOG_TRT "networkType (%d) \n", networkType);
+
+		CUDA_FREE_HOST(imgBgrInput);
+
+		// allocate input bgr image
+		bgrinputSize = make_int2(1920, 1080);
+
+		if( !cudaAllocMapped(&imgBgrInput, bgrinputSize) )
+		{
+			LogError("BACKGROUND_MATTING_V2:  failed to allocate CUDA memory for input bgr image\n");
+			return false;
+		}
+
+		if( !loadImage("test_img_bg.png", (void**)&imgBgrInput, &bgrinputSize.x, &bgrinputSize.y, IMAGE_RGB8) )
+		{
+			printf("segnet:  failed to load image '%s'\n", "test_img_bg.png");
+			return 0;
+		}
+	}
+
 	// set alpha blending value for classes that don't explicitly already have an alpha	
 	net->SetOverlayAlpha(cmdLine.GetFloat("alpha", 150.0f));
 
@@ -257,8 +272,8 @@ int main( int argc, char** argv )
 	// get the object class to ignore (if any)
 	const char* ignoreClass = cmdLine.GetString("ignore-class", "void");
 
-	
-	
+
+
 	/*
 	 * processing loop
 	 */
@@ -276,96 +291,124 @@ int main( int argc, char** argv )
 			LogError("segnet:  failed to capture video frame\n");
 			continue;
 		}
+		
+		printf(LOG_TRT "GetWidth GetHeight (%d,%d) \n", input->GetWidth(),input->GetHeight());
 
-		// allocate bgr input buffers for this size frame
-		if( !allocBackGroundMattingV2Buffers(input->GetWidth(), input->GetHeight()) )
+		/*--------------*/
+		/* allocBuffers */
+		/*--------------*/
+
+		if( networkType == segNet::BACKGROUND_MATTING_V2 )
 		{
-			LogError("BackGroundMattingV2:  failed to allocate buffers\n");
-			continue;
-		}
-
-		// allocate buffers for this size frame
-		if( !allocBuffers(input->GetWidth(), input->GetHeight(), visualizationFlags) )
-		{
-			LogError("segnet:  failed to allocate buffers\n");
-			continue;
-		}
-
-		if( !loadImage("test_img_bg.png", (void**)&imgBgrInput, &bgrinputSize.x, &bgrinputSize.y, IMAGE_RGB8) )
-		{
-			printf("segnet:  failed to load image '%s'\n", "test_img_bg.png");
-			return 0;
-		}
-
-		printf("imgInput[100]:%d \n",  imgInput[100].x);
-		printf("imgBgrInput[100]:%d \n",  imgBgrInput[100].x);
-		printf("imgInput:%d \n",  imgInput->x);
-		printf("imgBgrInput:%d \n",  imgBgrInput->x);
-
-/*
-		// process the segmentation network
-		if( !net->Process(imgInput, input->GetWidth(), input->GetHeight(), ignoreClass) )
-		{
-			LogError("segnet:  failed to process segmentation\n");
-			continue;
-		}
-*/
-
-		// process the segmentation network
-		if( !net->Process(imgInput, imgBgrInput, input->GetWidth(), input->GetHeight()) )
-		{
-			LogError("BACKGROUND_MATTING_V2:  failed to process segmentation\n");
-			continue;
-		}
-
-		// generate overlay
-		if( visualizationFlags & segNet::VISUALIZE_OVERLAY )
-		{
-			if( !net->Overlay(imgOverlay, overlaySize.x, overlaySize.y, filterMode) )
+			// allocate backgroundmattingv2 buffers for this size frame
+			if( !allocBackGroundMattingV2Buffers(input->GetWidth(), input->GetHeight()) )
 			{
-				LogError("segnet:  failed to process segmentation overlay.\n");
+				LogError("BackGroundMattingV2:  failed to allocate buffers\n");
+				continue;
+			}
+
+			//printf("imgInput[100]:%d \n",  imgInput[100].x);
+			//printf("imgBgrInput[100]:%d \n",  imgBgrInput[100].x);
+			//printf("imgInput:%d \n",  imgInput->x);
+			//printf("imgBgrInput:%d \n",  imgBgrInput->x);
+		}
+		else
+		{
+			// allocate buffers for this size frame
+			if( !allocBuffers(input->GetWidth(), input->GetHeight(), visualizationFlags) )
+			{
+				LogError("segnet:  failed to allocate buffers\n");
 				continue;
 			}
 		}
 
-		// generate mask
-		if( visualizationFlags & segNet::VISUALIZE_MASK )
+		/*---------*/
+		/* Process */
+		/*---------*/
+
+		if( networkType == segNet::BACKGROUND_MATTING_V2 )
 		{
-			if( !net->Mask(imgMask, maskSize.x, maskSize.y, filterMode) )
+			// process the segmentation network
+			if( !net->Process(imgInput, imgBgrInput, input->GetWidth(), input->GetHeight()) )
 			{
-				LogError("segnet:-console:  failed to process segmentation mask.\n");
+				LogError("BACKGROUND_MATTING_V2:  failed to process segmentation\n");
+				continue;
+			}
+		}
+		else
+		{
+			// process the segmentation network
+			if( !net->Process(imgInput, input->GetWidth(), input->GetHeight(), ignoreClass) )
+			{
+				LogError("segnet:  failed to process segmentation\n");
 				continue;
 			}
 		}
 
-		// generate composite
-		if( (visualizationFlags & segNet::VISUALIZE_OVERLAY) && (visualizationFlags & segNet::VISUALIZE_MASK) )
+		/*---------------*/
+		/* Visualization */
+		/*---------------*/
+		
+		if( networkType == segNet::BACKGROUND_MATTING_V2 )
 		{
-			CUDA(cudaOverlay(imgOverlay, overlaySize, imgComposite, compositeSize, 0, 0));
-			CUDA(cudaOverlay(imgMask, maskSize, imgComposite, compositeSize, overlaySize.x, 0));
-		}
+			if( !net->BinaryMask(imgMaskOutput, maskoutputSize.x, maskoutputSize.y) )
+			{
+				LogError("segnet:-console:  failed to process BinaryMask.\n");
+				continue;
+			}
 
-		if( !net->BinaryMask(imgMaskOutput, maskoutputSize.x, maskoutputSize.y) )
-		{
-			LogError("segnet:-console:  failed to process BinaryMask.\n");
-			continue;
+			if( !net->BlendingImage(imgBlendOutput, blendoutputSize.x, blendoutputSize.y) )
+			{
+				LogError("segnet:-console:  failed to process BlendingImage.\n");
+				continue;
+			}
 		}
-
-		if( !net->BlendingImage(imgBlendOutput, blendoutputSize.x, blendoutputSize.y) )
+		else
 		{
-			LogError("segnet:-console:  failed to process BlendingImage.\n");
-			continue;
+			// generate overlay
+			if( visualizationFlags & segNet::VISUALIZE_OVERLAY )
+			{
+				if( !net->Overlay(imgOverlay, overlaySize.x, overlaySize.y, filterMode) )
+				{
+					LogError("segnet:  failed to process segmentation overlay.\n");
+					continue;
+				}
+			}
+
+			// generate mask
+			if( visualizationFlags & segNet::VISUALIZE_MASK )
+			{
+				if( !net->Mask(imgMask, maskSize.x, maskSize.y, filterMode) )
+				{
+					LogError("segnet:-console:  failed to process segmentation mask.\n");
+					continue;
+				}
+			}
+
+			// generate composite
+			if( (visualizationFlags & segNet::VISUALIZE_OVERLAY) && (visualizationFlags & segNet::VISUALIZE_MASK) )
+			{
+				CUDA(cudaOverlay(imgOverlay, overlaySize, imgComposite, compositeSize, 0, 0));
+				CUDA(cudaOverlay(imgMask, maskSize, imgComposite, compositeSize, overlaySize.x, 0));
+			}
 		}
 
 		// render outputs
 		if( output != NULL )
 		{
-			//output->Render(imgOutput, outputSize.x, outputSize.y);
-			//output->Render(imgBgrInput, bgrinputSize.x, bgrinputSize.y);
-			//output->Render(imgOverlay, overlaySize.x, overlaySize.y);
-			//output->Render(imgMask, maskSize.x, maskSize.y);
-			output->Render(imgBlendOutput, blendoutputSize.x, blendoutputSize.y);
-
+			if( networkType == segNet::BACKGROUND_MATTING_V2 )
+			{
+				//output->Render(imgBgrInput, bgrinputSize.x, bgrinputSize.y);
+				//output->Render(imgInput, bgrinputSize.x, bgrinputSize.y);
+				output->Render(imgMaskOutput, maskoutputSize.x, maskoutputSize.y);
+				//output->Render(imgBlendOutput, blendoutputSize.x, blendoutputSize.y);
+			}
+			else
+			{
+				output->Render(imgOutput, outputSize.x, outputSize.y);
+				//output->Render(imgOverlay, overlaySize.x, overlaySize.y);
+				//output->Render(imgMask, maskSize.x, maskSize.y);
+			}
 
 			// update the status bar
 			char str[256];
@@ -389,18 +432,24 @@ int main( int argc, char** argv )
 	 * destroy resources
 	 */
 	LogVerbose("segnet:  shutting down...\n");
-	
+
 	SAFE_DELETE(input);
 	SAFE_DELETE(output);
-	SAFE_DELETE(net);
 
-	CUDA_FREE_HOST(imgBgrInput);
-	CUDA_FREE_HOST(imgMaskOutput);
-	CUDA_FREE_HOST(imgBlendOutput);
+	if( networkType == segNet::BACKGROUND_MATTING_V2 )
+	{
+		CUDA_FREE_HOST(imgBgrInput);
+		CUDA_FREE_HOST(imgMaskOutput);
+		CUDA_FREE_HOST(imgBlendOutput);
+	}
+	else
+	{
+		SAFE_DELETE(net);
+		CUDA_FREE_HOST(imgMask);
+		CUDA_FREE_HOST(imgOverlay);
+		CUDA_FREE_HOST(imgComposite);
+	}
 
-	CUDA_FREE_HOST(imgMask);
-	CUDA_FREE_HOST(imgOverlay);
-	CUDA_FREE_HOST(imgComposite);
 
 	LogVerbose("segnet:  shutdown complete.\n");
 	return 0;

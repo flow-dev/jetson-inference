@@ -226,5 +226,19 @@ cudaError_t cudaSegOverlay( void* input, uint32_t in_width, uint32_t in_height,
 }
 
 
-
-
+/**
+ * CUDA device function for alpha blending two pixels.
+ * The alpha blending of the `fgr` and `bgr` pixels is
+ * computed by the equation: `fgr * alph + bgr * (1.0 - alph)`
+ *
+ * @note cudaBlendImage() is for use inside of other CUDA kernels.
+ * @ingroup cuda
+ */
+ __device__ inline float3 cudaBlendImage( const float3& fgr, const float3& bgr, const float& alph )
+ {
+	 const float inva = 1.0f - alph;
+ 
+	 return make_float3(alph * fgr.x + inva * bgr.x,
+					 alph * fgr.y + inva * bgr.y,
+					 alph * fgr.z + inva * bgr.z);
+ }

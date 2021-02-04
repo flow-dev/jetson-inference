@@ -950,9 +950,10 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 		return false;
 	}
 
+/*
 	int count_valid   = 0;
 	int count_invalid = 0;
-/*
+
 	for( uint32_t n=0; n < (s_w_pha * s_h_pha); n++ )
 	{
 		if(mOutputs[3].CPU[n] > 0)
@@ -964,7 +965,7 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 			count_invalid += 1;
 		}
 	}
-*/
+
 	for( uint32_t n=0; n < (s_w_fgr * s_h_fgr); n++ )
 	{
 		if(mOutputs[4].CPU[n] > 0)
@@ -976,9 +977,8 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 			count_invalid += 1;
 		}
 	}
-
 	printf(LOG_TRT "BACKGROUND_MATTING_V2 output-- pixel_count (%d,%d) \n", count_valid, count_invalid);
-
+*/
 	PROFILER_END(PROFILER_POSTPROCESS);
 
 	// cache pointer to last image processed
