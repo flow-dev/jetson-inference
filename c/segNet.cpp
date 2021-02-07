@@ -39,6 +39,7 @@
 segNet::segNet() : tensorNet()
 {
 	mLastInputImg    = NULL;
+	mLastInputImgBgr = NULL;
 	mLastInputWidth  = 0;
 	mLastInputHeight = 0;
 	mLastInputFormat = IMAGE_UNKNOWN;
@@ -496,19 +497,15 @@ segNet* segNet::Create(const char* model, uint32_t maxBatchSize, precisionType p
 
 	printf(LOG_TRT "BACKGROUND_MATTING_V2 -- LoadNetwork Done \n");
 
+	/*********/
+	/* Dummy */
+	/*********/
+
 	// Dummy because it is not necessary for processing.
 	const uint32_t numClasses = net->GetNumClasses();
 	
 	if( !cudaAllocMapped((void**)&net->mClassColors, numClasses * sizeof(float4)) )
 		return NULL;
-	
-	for( uint32_t n=0; n < numClasses; n++ )
-	{
-		net->mClassColors[n*4+0] = 255.0f;	// r
-		net->mClassColors[n*4+1] = 0.0f;	// g
-		net->mClassColors[n*4+2] = 0.0f;	// b
-		net->mClassColors[n*4+3] = 255.0f;	// a
-	}
 
 	// Dummy because it is not necessary for processing.
 	net->mColorsAlphaSet = (bool*)malloc(numClasses * sizeof(bool));
@@ -983,6 +980,7 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 
 	// cache pointer to last image processed
 	mLastInputImg    = image_src;
+	mLastInputImgBgr = image_bgr;
 	mLastInputWidth  = width;
 	mLastInputHeight = height;
 	mLastInputFormat = format;
@@ -990,7 +988,7 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 	return true;
 }
 
-// BinaryMask (binary)
+// BACKGROUND_MATTING_V2 BinaryMask (binary)
 bool segNet::BinaryMask( uchar3* output, uint32_t out_width, uint32_t out_height )
 {
 	if( !output || out_width == 0 || out_height == 0 )
@@ -1016,7 +1014,7 @@ bool segNet::BinaryMask( uchar3* output, uint32_t out_width, uint32_t out_height
 	return true;
 }
 
-// BinaryMask (binary)
+// BACKGROUND_MATTING_V2 BlendingImage (uchar3)
 bool segNet::BlendingImage( uchar3* output, uint32_t out_width, uint32_t out_height )
 {
 	if( !output || out_width == 0 || out_height == 0 )

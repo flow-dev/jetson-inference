@@ -424,6 +424,7 @@ protected:
 	uchar3* mFgrMap;			/**< BACKGROUND_MATTING_V2 outputs of fgr */
 	
 	void*  	  mLastInputImg;	/**< last input image to be processed, stored for overlay */
+	void*  	  mLastInputImgBgr;	/**< last input image bgr to be processed */
 	uint32_t 	  mLastInputWidth;	/**< width in pixels of last input image to be processed */
 	uint32_t 	  mLastInputHeight;	/**< height in pixels of last input image to be processed */
 	imageFormat mLastInputFormat; /**< pixel format of last input image */

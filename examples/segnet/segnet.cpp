@@ -76,25 +76,30 @@ int usage()
 //
 typedef uchar3 pixelType;		// this can be uchar3, uchar4, float3, float4
 
+/* BACKGROUND_MATTING_V2 */
 pixelType* imgBgrInput    = NULL;	// BACKGROUND_MATTING_V2:bgr
 pixelType* imgMaskOutput = NULL;	// BACKGROUND_MATTING_V2:BinaryMask
 pixelType* imgBlendOutput = NULL;	// BACKGROUND_MATTING_V2:BlendingImage
 
+/* BACKGROUND_MATTING_V2 */
 int2 bgrinputSize;		// BACKGROUND_MATTING_V2:bgr
 int2 maskoutputSize;	// BACKGROUND_MATTING_V2:BinaryMask
 int2 blendoutputSize;	// BACKGROUND_MATTING_V2:BlendingImage
 
-
+/* SEGNET */
 pixelType* imgMask      = NULL;	// color of each segmentation class
 pixelType* imgOverlay   = NULL;	// input + alpha-blended mask
 pixelType* imgComposite = NULL;	// overlay with mask next to it
 pixelType* imgOutput    = NULL;	// reference to one of the above three
 
+/* SEGNET */
 int2 maskSize;
 int2 overlaySize;
 int2 compositeSize;
 int2 outputSize;
-
+segNet::FilterMode filterMode;
+uint32_t visualizationFlags;
+const char* ignoreClass;
 
 // allocate BACKGROUND_MATTING_V2 buffers
 bool allocBackGroundMattingV2Buffers( int width, int height)
@@ -247,30 +252,26 @@ int main( int argc, char** argv )
 		// allocate input bgr image
 		bgrinputSize = make_int2(1920, 1080);
 
-		if( !cudaAllocMapped(&imgBgrInput, bgrinputSize) )
-		{
-			LogError("BACKGROUND_MATTING_V2:  failed to allocate CUDA memory for input bgr image\n");
-			return false;
-		}
-
 		if( !loadImage("test_img_bg.png", (void**)&imgBgrInput, &bgrinputSize.x, &bgrinputSize.y, IMAGE_RGB8) )
 		{
 			printf("segnet:  failed to load image '%s'\n", "test_img_bg.png");
 			return 0;
 		}
 	}
+	else
+	{
+		// set alpha blending value for classes that don't explicitly already have an alpha	
+		net->SetOverlayAlpha(cmdLine.GetFloat("alpha", 150.0f));
 
-	// set alpha blending value for classes that don't explicitly already have an alpha	
-	net->SetOverlayAlpha(cmdLine.GetFloat("alpha", 150.0f));
+		// get the desired overlay/mask filtering mode
+		filterMode = segNet::FilterModeFromStr(cmdLine.GetString("filter-mode", "linear"));
 
-	// get the desired overlay/mask filtering mode
-	const segNet::FilterMode filterMode = segNet::FilterModeFromStr(cmdLine.GetString("filter-mode", "linear"));
+		// get the visualization flags
+		visualizationFlags = segNet::VisualizationFlagsFromStr(cmdLine.GetString("visualize", DEFAULT_VISUALIZATION));
 
-	// get the visualization flags
-	const uint32_t visualizationFlags = segNet::VisualizationFlagsFromStr(cmdLine.GetString("visualize", DEFAULT_VISUALIZATION));
-
-	// get the object class to ignore (if any)
-	const char* ignoreClass = cmdLine.GetString("ignore-class", "void");
+		// get the object class to ignore (if any)
+		ignoreClass = cmdLine.GetString("ignore-class", "void");
+	}
 
 
 
