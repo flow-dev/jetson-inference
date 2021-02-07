@@ -257,14 +257,14 @@ int main( int argc, char** argv )
 			LogError("BACKGROUND_MATTING_V2:  failed to allocate CUDA memory for input bgr image\n");
 			return false;
 		}
-
+/*
 		//[DEBUG] load bgr image from file.
 		if( !loadImage("test_img_bg.png", (void**)&imgBgrInput, &bgrinputSize.x, &bgrinputSize.y, IMAGE_RGB8) )
 		{
 			printf("segnet:  failed to load image '%s'\n", "test_img_bg.png");
 			return 0;
 		}
-
+*/
 	}
 	else
 	{
@@ -375,7 +375,7 @@ int main( int argc, char** argv )
 				LogError("segnet:-console:  failed to process BinaryMask.\n");
 				continue;
 			}
-
+			
 			if( !net->BlendingImage(imgBlendOutput, blendoutputSize.x, blendoutputSize.y) )
 			{
 				LogError("segnet:-console:  failed to process BlendingImage.\n");

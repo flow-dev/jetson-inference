@@ -863,6 +863,9 @@ bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat 
 // cudaTensor32ToRGB8 (from segNet.cu)
 cudaError_t cudaTensor32ToRGB8( float* srcDev, uchar3* dstDev, size_t width, size_t height);
 
+// cudaBlendRGBA32ToRGB8 (from segNet.cu)
+cudaError_t cudaBlendRGBA32ToRGB8( float* srcDev, float* alphDev, uchar3* dstDev, size_t width, size_t height);
+
 // BACKGROUND_MATTING_V2 Process
 bool segNet::Process( float* rgb_src, float* rgb_bgr, uint32_t width, uint32_t height)
 {
@@ -928,17 +931,6 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 	PROFILER_END(PROFILER_NETWORK);
 	PROFILER_BEGIN(PROFILER_POSTPROCESS);
 
-	// output "pha"
-	const int s_w_pha = DIMS_W(mOutputs[3].dims);
-	const int s_h_pha = DIMS_H(mOutputs[3].dims);
-	const int s_c_pha = DIMS_C(mOutputs[3].dims);
-
-	if( CUDA_FAILED(cudaGray32ToRGB8((float*)mOutputs[3].CUDA, (uchar3*)mPhaMap, s_w_pha, s_h_pha, make_float2(0,1))))
-	{
-		LogError(LOG_TRT "BACKGROUND_MATTING_V2 -- failed to process %ux%u cudaGray32ToRGB8 with CUDA\n", s_w_pha, s_h_pha);
-		return false;
-	}
-
 	// output "fgr"
 	const int s_w_fgr = DIMS_W(mOutputs[4].dims);
 	const int s_h_fgr = DIMS_H(mOutputs[4].dims);
@@ -947,9 +939,19 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 	/*
 	 * convert output "fgr" image from NCHW to packed RGB.
 	 */
+/*
 	if( CUDA_FAILED(cudaTensor32ToRGB8(mOutputs[4].CUDA, (uchar3*)mBlendMap, s_w_fgr, s_h_fgr )))
 	{
-		printf(LOG_TRT "BACKGROUND_MATTING_V2 -- cudaPostSegNet() failed\n");
+		printf(LOG_TRT "BACKGROUND_MATTING_V2 -- cudaTensor32ToRGB8() failed\n");
+		return false;
+	}
+*/
+	/*
+	 * convert output "fgr" image from NCHW to packed RGB.
+	 */
+	if( CUDA_FAILED(cudaBlendRGBA32ToRGB8(mOutputs[4].CUDA, mOutputs[3].CUDA, (uchar3*)mBlendMap, s_w_fgr, s_h_fgr )))
+	{
+		printf(LOG_TRT "BACKGROUND_MATTING_V2 -- cudaBlendRGBA32ToRGB8() failed\n");
 		return false;
 	}
 
@@ -1004,6 +1006,17 @@ bool segNet::BinaryMask( uchar3* output, uint32_t out_width, uint32_t out_height
 	}	
 
 	PROFILER_BEGIN(PROFILER_VISUALIZE);
+
+	// output "pha"
+	const int s_w_pha = DIMS_W(mOutputs[3].dims);
+	const int s_h_pha = DIMS_H(mOutputs[3].dims);
+	const int s_c_pha = DIMS_C(mOutputs[3].dims);
+
+	if( CUDA_FAILED(cudaGray32ToRGB8((float*)mOutputs[3].CUDA, (uchar3*)mPhaMap, s_w_pha, s_h_pha, make_float2(0,1))))
+	{
+		LogError(LOG_TRT "BACKGROUND_MATTING_V2 -- failed to process %ux%u cudaGray32ToRGB8 with CUDA\n", s_w_pha, s_h_pha);
+		return false;
+	}
 
 	// retrieve BinaryMask
 	uchar3* PhaMap = mPhaMap;
