@@ -252,11 +252,19 @@ int main( int argc, char** argv )
 		// allocate input bgr image
 		bgrinputSize = make_int2(1920, 1080);
 
+		if( !cudaAllocMapped(&imgBgrInput, bgrinputSize) )
+		{
+			LogError("BACKGROUND_MATTING_V2:  failed to allocate CUDA memory for input bgr image\n");
+			return false;
+		}
+/*
+		//[DEBUG] load bgr image from file.
 		if( !loadImage("test_img_bg.png", (void**)&imgBgrInput, &bgrinputSize.x, &bgrinputSize.y, IMAGE_RGB8) )
 		{
 			printf("segnet:  failed to load image '%s'\n", "test_img_bg.png");
 			return 0;
 		}
+*/
 	}
 	else
 	{
@@ -293,8 +301,18 @@ int main( int argc, char** argv )
 			continue;
 		}
 		
-		printf(LOG_TRT "GetWidth GetHeight (%d,%d) \n", input->GetWidth(),input->GetHeight());
+		printf(LOG_TRT "Capture (Width,Height) (%d,%d) \n", input->GetWidth(),input->GetHeight());
 
+		if(imgBgrInput->x==0)
+		{
+			CUDA(cudaMemcpy(imgBgrInput, imgInput, imageFormatSize(IMAGE_RGB8, input->GetWidth(), input->GetHeight()), cudaMemcpyDeviceToDevice));
+		}
+/*
+		printf("imgInput:%d \n",  imgInput->x);
+		printf("imgBgrInput:%d \n",  imgBgrInput->x);
+		printf("imgInput[100]:%d \n",  imgInput[100].x);
+		printf("imgBgrInput[100]:%d \n",  imgBgrInput[100].x);
+*/
 		/*--------------*/
 		/* allocBuffers */
 		/*--------------*/
@@ -306,12 +324,7 @@ int main( int argc, char** argv )
 			{
 				LogError("BackGroundMattingV2:  failed to allocate buffers\n");
 				continue;
-			}
-
-			//printf("imgInput[100]:%d \n",  imgInput[100].x);
-			//printf("imgBgrInput[100]:%d \n",  imgBgrInput[100].x);
-			//printf("imgInput:%d \n",  imgInput->x);
-			//printf("imgBgrInput:%d \n",  imgBgrInput->x);
+			};
 		}
 		else
 		{
