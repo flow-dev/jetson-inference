@@ -242,3 +242,64 @@ cudaError_t cudaSegOverlay( void* input, uint32_t in_width, uint32_t in_height,
 					 alph * fgr.y + inva * bgr.y,
 					 alph * fgr.z + inva * bgr.z);
  }
+
+
+// clip float to [min,max]
+static inline __device__ float clip( const float x, float min, float max )
+{
+	return x > max ? max : x < min ? min : x;
+}
+
+// clip vector to [min,max]
+static inline __device__ uchar3 clip( const float3& px, int min, int max )
+{
+	return make_uchar3(clip(px.x, min, max),
+					   clip(px.y, min, max),
+					   clip(px.z, min, max));
+}
+
+ // TensorToRGB
+ template<typename T_in, typename T_out>
+__global__ void TensorToRGB( T_in* srcImage, T_out* dstImage, int width, int height)
+{
+	const int x = blockIdx.x * blockDim.x + threadIdx.x;
+	const int y = blockIdx.y * blockDim.y + threadIdx.y;
+	const int n = width * height;
+	
+	if( x >= width || y >= height )
+		return;
+
+	const int dx = ((float)x * 1.0f);
+	const int dy = ((float)y * 1.0f);
+
+	const uchar3 rgb = clip(make_float3(srcImage[n * 0 + dy * width + dx] * 255.0f,
+										srcImage[n * 1 + dy * width + dx] * 255.0f,
+										srcImage[n * 2 + dy * width + dx] * 255.0f), 0, 255);
+
+	dstImage[y * width + x] = rgb;
+}
+
+
+template<typename T_in, typename T_out> 
+static cudaError_t launchTensorToRGB(  T_in* srcDev, T_out* dstDev, size_t width, size_t height )
+{
+	if( !srcDev || !dstDev )
+		return cudaErrorInvalidDevicePointer;
+
+	if( width == 0 || height == 0 )
+		return cudaErrorInvalidValue;
+
+	// launch kernel
+	const dim3 blockDim(8, 8);
+	const dim3 gridDim(iDivUp(width,blockDim.x), iDivUp(height,blockDim.y));
+
+	TensorToRGB<T_in, T_out><<<gridDim, blockDim>>>( srcDev, dstDev, width, height );
+
+	return CUDA(cudaGetLastError());
+}
+
+// cudaTensor32ToRGB8 (float-> uchar3)
+cudaError_t cudaTensor32ToRGB8( float* srcDev, uchar3* dstDev, size_t width, size_t height)
+{
+	return launchTensorToRGB<float, uchar3>(srcDev, dstDev, width, height);
+}

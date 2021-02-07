@@ -421,7 +421,7 @@ protected:
 	float*   mClassColors;		/**< array of overlay colors in shared CPU/GPU memory */
 	uint8_t* mClassMap;			/**< runtime buffer for the argmax-classified class index of each tile */
 	uchar3* mPhaMap;			/**< BACKGROUND_MATTING_V2 outputs of pha */
-	uchar3* mFgrMap;			/**< BACKGROUND_MATTING_V2 outputs of fgr */
+	uchar3* mBlendMap;			/**< BACKGROUND_MATTING_V2 outputs of BlendMap */
 	
 	void*  	  mLastInputImg;	/**< last input image to be processed, stored for overlay */
 	void*  	  mLastInputImgBgr;	/**< last input image bgr to be processed */

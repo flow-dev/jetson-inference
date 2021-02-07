@@ -257,14 +257,14 @@ int main( int argc, char** argv )
 			LogError("BACKGROUND_MATTING_V2:  failed to allocate CUDA memory for input bgr image\n");
 			return false;
 		}
-/*
+
 		//[DEBUG] load bgr image from file.
 		if( !loadImage("test_img_bg.png", (void**)&imgBgrInput, &bgrinputSize.x, &bgrinputSize.y, IMAGE_RGB8) )
 		{
 			printf("segnet:  failed to load image '%s'\n", "test_img_bg.png");
 			return 0;
 		}
-*/
+
 	}
 	else
 	{
@@ -303,16 +303,21 @@ int main( int argc, char** argv )
 		
 		printf(LOG_TRT "Capture (Width,Height) (%d,%d) \n", input->GetWidth(),input->GetHeight());
 
-		if(imgBgrInput->x==0)
+		if( networkType == segNet::BACKGROUND_MATTING_V2 )
 		{
-			CUDA(cudaMemcpy(imgBgrInput, imgInput, imageFormatSize(IMAGE_RGB8, input->GetWidth(), input->GetHeight()), cudaMemcpyDeviceToDevice));
-		}
+			if(imgBgrInput->x==0)
+			{
+				// Take a trigger and copy imgBgrInput from imgInput.
+				CUDA(cudaMemcpy(imgBgrInput, imgInput, imageFormatSize(IMAGE_RGB8, input->GetWidth(), input->GetHeight()), cudaMemcpyDeviceToDevice));
+			}
 /*
-		printf("imgInput:%d \n",  imgInput->x);
-		printf("imgBgrInput:%d \n",  imgBgrInput->x);
-		printf("imgInput[100]:%d \n",  imgInput[100].x);
-		printf("imgBgrInput[100]:%d \n",  imgBgrInput[100].x);
+			printf("imgInput:%d \n",  imgInput->x);
+			printf("imgBgrInput:%d \n",  imgBgrInput->x);
+			printf("imgInput[100]:%d \n",  imgInput[100].x);
+			printf("imgBgrInput[100]:%d \n",  imgBgrInput[100].x);
 */
+		}
+
 		/*--------------*/
 		/* allocBuffers */
 		/*--------------*/
@@ -414,8 +419,8 @@ int main( int argc, char** argv )
 			{
 				//output->Render(imgBgrInput, bgrinputSize.x, bgrinputSize.y);
 				//output->Render(imgInput, bgrinputSize.x, bgrinputSize.y);
-				output->Render(imgMaskOutput, maskoutputSize.x, maskoutputSize.y);
-				//output->Render(imgBlendOutput, blendoutputSize.x, blendoutputSize.y);
+				//output->Render(imgMaskOutput, maskoutputSize.x, maskoutputSize.y);
+				output->Render(imgBlendOutput, blendoutputSize.x, blendoutputSize.y);
 			}
 			else
 			{

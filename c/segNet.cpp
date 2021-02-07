@@ -48,7 +48,7 @@ segNet::segNet() : tensorNet()
 	mClassColors    = NULL;
 	mClassMap       = NULL;
 	mPhaMap         = NULL;
-	mFgrMap         = NULL;
+	mBlendMap       = NULL;
 
 	mNetworkType = SEGNET_CUSTOM;
 }
@@ -60,7 +60,7 @@ segNet::~segNet()
 	CUDA_FREE_HOST(mClassColors);
 	CUDA_FREE_HOST(mClassMap);
 	CUDA_FREE_HOST(mPhaMap);
-	CUDA_FREE_HOST(mFgrMap);
+	CUDA_FREE_HOST(mBlendMap);
 	
 	if( mColorsAlphaSet != NULL )
 	{
@@ -483,9 +483,9 @@ segNet* segNet::Create(const char* model, uint32_t maxBatchSize, precisionType p
 	const int s_w_fgr = DIMS_W(net->mOutputs[4].dims);
 	const int s_h_fgr = DIMS_H(net->mOutputs[4].dims);
 	
-	LogVerbose(LOG_TRT "BACKGROUND_MATTING_V2 outputs of pha -- s_w_pha %i  s_h_pha %i \n", s_w_pha, s_h_pha);
+	LogVerbose(LOG_TRT "BACKGROUND_MATTING_V2 outputs of fgr -- s_w_fgr %i  s_h_fgr %i \n", s_w_fgr, s_h_fgr);
 
-	if( !cudaAllocMapped((void**)&net->mFgrMap, s_w_fgr * s_h_fgr * sizeof(uchar3)))
+	if( !cudaAllocMapped((void**)&net->mBlendMap, s_w_fgr * s_h_fgr * sizeof(uchar3)))
 		return NULL;
 
 	printf(LOG_TRT "BACKGROUND_MATTING_V2 output_name (%s) \n", net->mOutputs[0].name.c_str());
@@ -860,6 +860,9 @@ bool segNet::Process( void* image, uint32_t width, uint32_t height, imageFormat 
 }
 
 
+// cudaTensor32ToRGB8 (from segNet.cu)
+cudaError_t cudaTensor32ToRGB8( float* srcDev, uchar3* dstDev, size_t width, size_t height);
+
 // BACKGROUND_MATTING_V2 Process
 bool segNet::Process( float* rgb_src, float* rgb_bgr, uint32_t width, uint32_t height)
 {
@@ -941,9 +944,12 @@ bool segNet::Process( void* image_src, void* image_bgr, uint32_t width, uint32_t
 	const int s_h_fgr = DIMS_H(mOutputs[4].dims);
 	const int s_c_fgr = DIMS_C(mOutputs[4].dims);
 
-	if( CUDA_FAILED(cudaGray32ToRGB8((float*)mOutputs[4].CUDA, (uchar3*)mFgrMap, s_w_fgr, s_h_fgr, make_float2(0,1))))
+	/*
+	 * convert output "fgr" image from NCHW to packed RGB.
+	 */
+	if( CUDA_FAILED(cudaTensor32ToRGB8(mOutputs[4].CUDA, (uchar3*)mBlendMap, s_w_fgr, s_h_fgr )))
 	{
-		LogError(LOG_TRT "BACKGROUND_MATTING_V2 -- failed to process %ux%u cudaRGB32ToRGB8 with CUDA\n", s_w_fgr, s_h_fgr);
+		printf(LOG_TRT "BACKGROUND_MATTING_V2 -- cudaPostSegNet() failed\n");
 		return false;
 	}
 
@@ -1025,15 +1031,16 @@ bool segNet::BlendingImage( uchar3* output, uint32_t out_width, uint32_t out_hei
 
 	PROFILER_BEGIN(PROFILER_VISUALIZE);
 
-	// retrieve BlendingImage
-	uchar3* FgrMap = mFgrMap;
-
 	const int s_w = DIMS_W(mOutputs[4].dims);
 	const int s_h = DIMS_H(mOutputs[4].dims);
-		
+	const int s_c = DIMS_C(mOutputs[4].dims);
+
+	// retrieve BlendingImage
+	uchar3* BlendMap = mBlendMap;
+
 	if( out_width == s_w && out_height == s_h )
 	{
-		memcpy(output, FgrMap, s_w * s_h * sizeof(uchar3));
+		memcpy(output, BlendMap, s_w * s_h * sizeof(uchar3));
 	}
 	PROFILER_END(PROFILER_VISUALIZE);
 	
